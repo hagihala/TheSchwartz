@@ -43,14 +43,12 @@ main();
 # Main Program
 
 sub main {
-    my %conf = %{ configure() };
+    my $conf = configure();
 
     # Start reporting
-    clr_screen();
     while (1) {
-        report($conf{score_dir}, $conf{func_col}, $conf{arg_col_by_func}, $conf{sort});
-        sleep($conf{delay});
-        clr_screen();
+        report($conf);
+        sleep($conf->{delay});
     }
 }
 
@@ -95,25 +93,40 @@ sub configure {
     # Make sure to give a reasonable default for delay
     $delay ||= 3;
 
+    my $row_width = 100;
+    my @columns = (
+        [ 'PID',  6  ],
+        [ 'FUNC', 40 ],
+        [ 'S',    2  ],
+        [ 'TIME', 8  ],
+        [ 'ARGS', 40 ],
+    );
+    my $row_format = join(' ', map { '%-'.$_->[1].'.'.$_->[1].'s' } @columns)."\n";
+    my @column_labels  = map { $_->[0] } @columns;
+
     return +{
         score_dir       => $score_dir,
         delay           => $delay,
         arg_col_by_func => \%arg_col_by_func,
         func_col        => $func_col,
         sort            => $sort,
+        row_width       => $row_width,
+        row_format      => $row_format,
+        column_labels   => \@column_labels,
     };
 }
 
 sub report {
-    my ($dir, $func_col, $arg_col_by_func, $sort) = @_;
+    my $conf = shift;
 
     # Find the files available
-    opendir(SD, $dir) or die "Can't read directory '$dir': $!\n";
-    my @files = map { $dir."/$_" } readdir(SD);
+    opendir(SD, $conf->{score_dir}) or die "Can't read directory '".$conf->{score_dir}."': ".$!."\n";
+    my @files = map { $conf->{score_dir}."/$_" } readdir(SD);
     closedir(SD);
 
     # Grab the data out of them
     my @data;
+    my $now = time;
     foreach my $f (@files) {
         next unless $f =~ /scoreboard\.[0-9]+$/;
         open(SF, '<', $f) or die "Can't open score file '$f': $!\n";
@@ -122,23 +135,33 @@ sub report {
 
         push @data, \%dat;
     }
+    my $num_workers = scalar(@data);
 
-    my $now = time;
-    my $num = scalar(@data);
-    my $width = 80-17-$num;
-    printf("Workers: %d total %${width}s\n\n", $num, scalar localtime($now));
-    printf("% 5s % 20s % 2s % 7s % 41s\n", 'PID', 'FUNC', 'S', 'TIME', 'ARGS');
-    foreach my $d (sort { order_by($sort, $a, $b) } @data) {
-        my $formatted_funcname = format_funcname($d->{funcname}, $func_col);
 
-        printf("% 5s % 20s % 2s % 7s % 41s\n",
-               $d->{pid},
-               $formatted_funcname,
-               ($d->{done} ? 'S' : 'R'),
-               format_time($d->{started}, $d->{done}, $now),
-               format_arg($d->{arg}, $arg_col_by_func, $d->{funcname}, $formatted_funcname),
-              );
+    # format rows
+    my $header = sprintf("Workers: %4d total ", $num_workers);
+    $header .= sprintf('%'.($conf->{row_width} - length($header))."s\n\n", scalar localtime($now));
+    $header .= sprintf($conf->{row_format}, @{ $conf->{column_labels} });
+
+    my @rows = ();
+    foreach my $d (sort { order_by($conf->{sort}, $a, $b) } @data) {
+        my $formatted_funcname = format_funcname($d->{funcname}, $conf->{func_col});
+
+        my @column_values = (
+            $d->{pid},
+            $formatted_funcname,
+            ($d->{done} ? 'S' : 'R'),
+            format_time($d->{started}, $d->{done}, $now),
+            format_arg($d->{arg}, $conf->{arg_col_by_func}, $d->{funcname}, $formatted_funcname),
+        );
+        push @rows, sprintf($conf->{row_format}, @column_values);
     }
+
+
+    # clear screen and print
+    clear_screen();
+    print $header;
+    print join '', @rows;
 }
 
 sub order_by {
@@ -169,7 +192,7 @@ sub format_funcname {
         $val = $funcname;
     }
 
-    return substr($val, 0, 20),
+    return $val;
 }
 
 sub format_time {
@@ -221,9 +244,9 @@ sub format_arg {
         $val = $h{$fmt};
     }
 
-    return substr($val||'', 0, 41),
+    return $val;
 }
 
-sub clr_screen {
+sub clear_screen {
     $TERM->Tputs('cl', 1, \*STDOUT);
 }
