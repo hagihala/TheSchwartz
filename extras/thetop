@@ -37,56 +37,73 @@ BEGIN {
 
 our $TERM = Term::Cap->Tgetent({OSPEED=>$OSPEED});
 
+main();
+
 #--------------------------------------#
 # Main Program
 
-my ($score_dir, $delay, $func_col, @arg_col, $sort);
+sub main {
 
-GetOptions('score-dir=s' => \$score_dir,
-           'delay|d=s'   => \$delay,
-           'func=s'      => \$func_col,
-           'arg=s'       => \@arg_col,
-           'sort|s=s'    => \$sort,
-          );
+    my %conf = %{ configure() };
 
-# Make sure we know where to find the scoreboard files
-unless ($score_dir) {
-    foreach my $d (qw(/var/run /dev/shm /tmp)) {
-        if (-e "$d/theschwartz") {
-            $score_dir = "$d/theschwartz";
-            last;
-        }
-    }
-
-    die "Can't find scoreboard directory.  Use '--score-dir'\n"
-      unless $score_dir;
-}
-
-# If we got some formatting instructions for the arg column, parse it out
-my %arg_col_by_func;
-if (@arg_col) {
-    foreach my $a (@arg_col) {
-        if ($a =~ /=/) {
-            my ($func, $fmt) = split('=', $a, 2);
-            $arg_col_by_func{$func} = $fmt;
-        } else {
-            $arg_col_by_func{'__ALL__'} = $a;
-        }
-    }
-}
-
-# Make sure to give a reasonable default for delay
-$delay ||= 3;
-
-# Start reporting
-clr_screen();
-while (1) {
-    report($score_dir, $func_col, \%arg_col_by_func, $sort);
-    sleep($delay);
+    # Start reporting
     clr_screen();
+    while (1) {
+        report($conf{score_dir}, $conf{func_col}, $conf{arg_col_by_func}, $conf{sort});
+        sleep($conf{delay});
+        clr_screen();
+    }
 }
 
 ################################################################################
+
+sub configure {
+    my ($score_dir, $delay, $func_col, @arg_col, $sort);
+
+    GetOptions('score-dir=s' => \$score_dir,
+               'delay|d=s'   => \$delay,
+               'func=s'      => \$func_col,
+               'arg=s'       => \@arg_col,
+               'sort|s=s'    => \$sort,
+              );
+
+    # Make sure we know where to find the scoreboard files
+    unless ($score_dir) {
+        foreach my $d (qw(/var/run /dev/shm /tmp)) {
+            if (-e "$d/theschwartz") {
+                $score_dir = "$d/theschwartz";
+                last;
+            }
+        }
+
+        die "Can't find scoreboard directory.  Use '--score-dir'\n"
+          unless $score_dir;
+    }
+
+    # If we got some formatting instructions for the arg column, parse it out
+    my %arg_col_by_func;
+    if (@arg_col) {
+        foreach my $a (@arg_col) {
+            if ($a =~ /=/) {
+                my ($func, $fmt) = split('=', $a, 2);
+                $arg_col_by_func{$func} = $fmt;
+            } else {
+                $arg_col_by_func{'__ALL__'} = $a;
+            }
+        }
+    }
+
+    # Make sure to give a reasonable default for delay
+    $delay ||= 3;
+
+    return +{
+        score_dir       => $score_dir,
+        delay           => $delay,
+        arg_col_by_func => \%arg_col_by_func,
+        func_col        => $func_col,
+        sort            => $sort,
+    };
+}
 
 sub report {
     my ($dir, $func_col, $arg_col_by_func, $sort) = @_;
@@ -180,9 +197,9 @@ sub fmt_arg {
     my $func_orig = $d->{funcname};
 
     if ($arg_col_by_func) {
-        my $fmt = ($arg_col_by_func{$func_str}  ||
-                   $arg_col_by_func{$func_orig} ||
-                   $arg_col_by_func{'__ALL__'});
+        my $fmt = ($arg_col_by_func->{$func_str}  ||
+                   $arg_col_by_func->{$func_orig} ||
+                   $arg_col_by_func->{'__ALL__'});
         if ($fmt) {
             my $arg_array = $d->{arg_array};
 
