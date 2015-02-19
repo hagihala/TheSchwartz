@@ -43,7 +43,6 @@ main();
 # Main Program
 
 sub main {
-
     my %conf = %{ configure() };
 
     # Start reporting
@@ -121,7 +120,6 @@ sub report {
         my %dat = map { chomp; split('=', $_, 2) } <SF>;
         close(SF);
 
-        $dat{arg_array} = [split(',', $dat{arg}||'')];
         push @data, \%dat;
     }
 
@@ -130,14 +128,14 @@ sub report {
     printf("Workers: %d total %${width}s\n\n", $num, scalar localtime);
     printf("% 5s % 20s % 2s % 7s % 41s\n", 'PID', 'FUNC', 'S', 'TIME', 'ARGS');
     foreach my $d (sort { order_by($sort, $a, $b) } @data) {
-        my $func_str = fmt_func($d, $func_col);
+        my $formatted_funcname = format_funcname($d->{funcname}, $func_col);
 
         printf("% 5s % 20s % 2s % 7s % 41s\n",
                $d->{pid},
-               $func_str,
+               $formatted_funcname,
                ($d->{done} ? 'S' : 'R'),
-               fmt_time($d),
-               fmt_arg($d, $arg_col_by_func, $func_str),
+               format_time($d->{started}, $d->{done}),
+               format_arg($d->{arg}, $arg_col_by_func, $d->{funcname}, $formatted_funcname),
               );
     }
 }
@@ -154,25 +152,28 @@ sub order_by {
     }
 }
 
-sub fmt_func {
-    my ($d, $fmt) = @_;
-    my $val = $d->{funcname};
+sub format_funcname {
+    my ($funcname, $fmt) = @_;
+    my $val;
 
     if ($fmt) {
         if ($fmt eq 'trim') {
+            $val = $funcname;
             $val =~ s/^.+:://g;
         } else {
-            $val =~ /($fmt)/;
+            $funcname =~ /($fmt)/;
             $val = $1;
         }
+    } else {
+        $val = $funcname;
     }
 
     return substr($val, 0, 20),
 }
 
-sub fmt_time {
-    my ($d) = @_;
-    my $secs = ($d->{done}||time) - $d->{started};
+sub format_time {
+    my ($started, $done) = @_;
+    my $secs = ($done||time) - $started;
 
     if ($secs < 60) {
         return sprintf("%02d:%02d", 0, $secs);
@@ -191,31 +192,32 @@ sub fmt_time {
 ## Format the arguments by interpreting the args as either a hash or an array
 ## and printing out the appropriate element.
 
-sub fmt_arg {
-    my ($d, $arg_col_by_func, $func_str) = @_;
-    my $val = $d->{arg};
-    my $func_orig = $d->{funcname};
+sub format_arg {
+    my ($arg, $arg_col_by_func, $funcname, $formatted_funcname) = @_;
+    my $arg_array = [split(',', $arg||'')];
 
+    my $fmt;
     if ($arg_col_by_func) {
-        my $fmt = ($arg_col_by_func->{$func_str}  ||
-                   $arg_col_by_func->{$func_orig} ||
+        $fmt = ($arg_col_by_func->{$formatted_funcname}  ||
+                   $arg_col_by_func->{$funcname} ||
                    $arg_col_by_func->{'__ALL__'});
-        if ($fmt) {
-            my $arg_array = $d->{arg_array};
+    }
 
-            # If its a number treat the args as an array
-            if ($fmt =~ /^[0-9]+$/) {
-                $val = $arg_array->[$fmt];
-            }
-            # otherwise, treat the args as a hash
-            else {
-                # Compensate for odd numbers of args
-                push @$arg_array, undef if scalar(@$arg_array) % 2;
+    my $val;
+    if (!$fmt) {
+        $val = $arg;
+    } elsif ($fmt =~ /^[0-9]+$/) {
+        # If its a number treat the args as an array
+        my $arg_array = [split(',', $arg||'')];
+        $val = $arg_array->[$fmt];
+    } else {
+        # otherwise, treat the args as a hash
+        # Compensate for odd numbers of args
+        my $arg_array = [split(',', $arg||'')];
+        push @$arg_array, undef if scalar(@$arg_array) % 2;
 
-                my %h = @$arg_array;
-                $val = $h{$fmt};
-            }
-        }
+        my %h = @$arg_array;
+        $val = $h{$fmt};
     }
 
     return substr($val||'', 0, 41),
