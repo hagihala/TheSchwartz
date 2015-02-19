@@ -123,9 +123,10 @@ sub report {
         push @data, \%dat;
     }
 
+    my $now = time;
     my $num = scalar(@data);
     my $width = 80-17-$num;
-    printf("Workers: %d total %${width}s\n\n", $num, scalar localtime);
+    printf("Workers: %d total %${width}s\n\n", $num, scalar localtime($now));
     printf("% 5s % 20s % 2s % 7s % 41s\n", 'PID', 'FUNC', 'S', 'TIME', 'ARGS');
     foreach my $d (sort { order_by($sort, $a, $b) } @data) {
         my $formatted_funcname = format_funcname($d->{funcname}, $func_col);
@@ -134,7 +135,7 @@ sub report {
                $d->{pid},
                $formatted_funcname,
                ($d->{done} ? 'S' : 'R'),
-               format_time($d->{started}, $d->{done}),
+               format_time($d->{started}, $d->{done}, $now),
                format_arg($d->{arg}, $arg_col_by_func, $d->{funcname}, $formatted_funcname),
               );
     }
@@ -172,8 +173,8 @@ sub format_funcname {
 }
 
 sub format_time {
-    my ($started, $done) = @_;
-    my $secs = ($done||time) - $started;
+    my ($started, $done, $now) = @_;
+    my $secs = ($done||$now) - $started;
 
     if ($secs < 60) {
         return sprintf("%02d:%02d", 0, $secs);
